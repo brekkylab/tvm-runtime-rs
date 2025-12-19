@@ -1,0 +1,4 @@
+[workspace]
+members = ["tvm-ffi", "tvm-ffi-sys", "tvm-ffi-macros", "tvm-runtime-sys"]
+
+resolver = "2"
