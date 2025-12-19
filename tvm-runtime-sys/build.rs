@@ -19,31 +19,38 @@
 use std::env;
 use std::path::PathBuf;
 
-fn option_value(key: &str) -> &str {
-    if env::var(key).is_ok() {
-        "ON"
-    } else {
-        "OFF"
-    }
-}
-
 fn main() {
     let cmake_source_path = PathBuf::new().join("..").join("3rdparty").join("tvm");
     let mut cfg = cmake::Config::new(cmake_source_path);
-    cfg.define("CMAKE_BUILD_TYPE", "Release")
-        .define("INSTALL_DEV", "OFF")
-        .define("BUILD_DUMMY_LIBTVM", "ON")
-        .define("USE_LIBBACTRACE", "OFF")
-        .define("TVM_FFI_USE_LIBBACKTRACE", "OFF")
-        .define(
-            "USE_METAL",
-            std::env::var("USE_METAL").unwrap_or_else(|_| "ON".to_string()),
-        )
-        .define(
-            "USE_VULKAN",
-            std::env::var("USE_VULKAN").unwrap_or_else(|_| "OFF".to_string()),
-        )
-        .very_verbose(true);
+
+    // Common flags
+    cfg.very_verbose(true);
+    cfg.define("INSTALL_DEV", "OFF");
+    cfg.define("BUILD_DUMMY_LIBTVM", "ON");
+
+    // Profile-based flags
+    let profile = env::var("PROFILE").unwrap();
+    if profile == "debug" {
+        cfg.define("CMAKE_BUILD_TYPE", "Debug");
+        cfg.define("USE_LIBBACKTRACE", "ON");
+    } else {
+        cfg.define("CMAKE_BUILD_TYPE", "Release");
+        cfg.define("USE_LIBBACKTRACE", "OFF");
+    }
+
+    // Feature-based flags
+    if cfg!(feature = "cuda") {
+        cfg.define("USE_CUDA", "ON");
+    }
+
+    if cfg!(feature = "metal") {
+        cfg.define("USE_METAL", "ON");
+    }
+
+    if cfg!(feature = "vulkan") {
+        cfg.define("USE_VULKAN", "ON");
+    }
+
     let lib_dir = cfg.build().join("lib");
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=dylib=tvm_runtime");

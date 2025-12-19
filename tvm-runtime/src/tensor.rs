@@ -2,8 +2,8 @@ use core::ffi::c_void;
 use std::ptr::null_mut;
 
 use tvm_ffi::{
-    collections::tensor::DLTensorExt as _, DLDataType, DLDevice, DLDeviceType, NDAllocator,
-    Tensor as TVMFFITensor,
+    collections::tensor::DLTensorExt as _, dtype::AsDLDataType, CPUNDAlloc, DLDataType, DLDevice,
+    DLDeviceType, NDAllocator, Tensor as TVMFFITensor,
 };
 use tvm_ffi_sys::DLTensor;
 use tvm_runtime_sys::{TVMDeviceAPIAllocDataSpace, TVMDeviceAPIFreeDataSpace, TVMDeviceAPIGet};
@@ -34,7 +34,7 @@ fn is_host(device: DLDevice) -> bool {
 }
 
 #[derive(Debug, Clone)]
-struct DeviceNDAlloc {}
+pub struct DeviceNDAlloc {}
 
 unsafe impl Send for DeviceNDAlloc {}
 
@@ -80,17 +80,45 @@ impl Tensor {
     }
 
     pub fn empty_like(other: &Tensor, device: DLDevice) -> Self {
-        Self::empty(other.inner.shape(), other.inner.dtype(), device)
+        Self::empty(other.shape(), other.dtype(), device)
+    }
+
+    pub fn shape(&self) -> &[i64] {
+        self.inner.shape()
+    }
+
+    pub fn dtype(&self) -> DLDataType {
+        self.inner.dtype()
+    }
+
+    pub fn device(&self) -> DLDevice {
+        self.inner.device()
+    }
+
+    pub fn dltensor(&self) -> &DLTensor {
+        self.inner.dltensor()
+    }
+
+    pub fn dltensor_mut(&mut self) -> &mut DLTensor {
+        self.inner.dltensor_mut()
+    }
+
+    pub fn data_as_slice<T: AsDLDataType>(&self) -> tvm_ffi::error::Result<&[T]> {
+        self.inner.data_as_slice()
+    }
+
+    pub fn data_as_slice_mut<T: AsDLDataType>(&mut self) -> tvm_ffi::error::Result<&mut [T]> {
+        self.inner.data_as_slice_mut()
     }
 
     fn copy_from(&mut self, src: &Self) -> tvm_ffi::error::Result<()> {
-        if is_host(self.inner.device()) && is_host(src.inner.device()) {
+        if is_host(self.device()) && is_host(src.device()) {
             // Host to Host copy
-            let numel = self.inner.shape().iter().product::<i64>() as usize;
-            let item_size = (self.inner.dtype().bits / 8) as usize;
+            let numel = self.shape().iter().product::<i64>() as usize;
+            let item_size = (self.dtype().bits / 8) as usize;
             let nbytes = numel * item_size;
 
-            let src_data = src.inner.data_as_slice::<u8>()?;
+            let src_data = src.data_as_slice::<u8>()?;
             debug_assert_eq!(
                 nbytes,
                 src_data.len(),
@@ -99,25 +127,25 @@ impl Tensor {
                 nbytes
             );
             let src_ptr = src_data.as_ptr() as *const u8;
-            let dst_ptr = self.inner.data_as_slice_mut()?.as_mut_ptr() as *mut u8;
+            let dst_ptr = self.data_as_slice_mut()?.as_mut_ptr() as *mut u8;
             unsafe {
                 core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, nbytes);
             }
         } else {
-            let device = if is_host(self.inner.device()) {
+            let device = if is_host(self.device()) {
                 // Device to Host copy
-                src.inner.device()
+                src.device()
             } else {
                 // Host to Device copy, or
                 // Device to Device copy
-                self.inner.device()
+                self.device()
             };
             unsafe {
                 let handle = TVMDeviceAPIGet(device, false as i32);
                 tvm_runtime_sys::TVMDeviceAPICopyDataFromTo(
                     handle,
-                    src.inner.dltensor(),
-                    self.inner.dltensor_mut(),
+                    src.dltensor(),
+                    self.dltensor_mut(),
                     null_mut(),
                 );
                 tvm_runtime_sys::TVMDeviceAPIStreamSync(handle, device, null_mut());
@@ -125,6 +153,73 @@ impl Tensor {
             }
         }
         Ok(())
+    }
+
+    pub fn copy_from_slice(&mut self, src: &[u8]) -> tvm_ffi::error::Result<()> {
+        if self.device().device_type == DLDeviceType::kDLCPU {
+            // Host to Host copy
+            let numel = self.shape().iter().product::<i64>() as usize;
+            let item_size = (self.dtype().bits / 8) as usize;
+            let nbytes = numel * item_size;
+
+            debug_assert_eq!(
+                nbytes,
+                src.len(),
+                "data length ({}) does not match tensor size ({})",
+                src.len(),
+                nbytes
+            );
+            let src_ptr = src.as_ptr() as *const u8;
+            let dst_ptr = self.data_as_slice_mut()?.as_mut_ptr() as *mut u8;
+            unsafe {
+                core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, nbytes);
+            }
+        } else {
+            // Host to Device copy
+            let host_dltensor = DLTensor {
+                data: src.as_ptr() as *mut c_void,
+                device: DLDevice {
+                    device_type: DLDeviceType::kDLCPU,
+                    device_id: 0,
+                },
+                ndim: self.dltensor().ndim,
+                dtype: self.dltensor().dtype,
+                shape: self.dltensor().shape,
+                strides: self.dltensor().strides,
+                byte_offset: self.dltensor().byte_offset,
+            };
+            unsafe {
+                let handle = TVMDeviceAPIGet(self.device(), false as i32);
+                tvm_runtime_sys::TVMDeviceAPICopyDataFromTo(
+                    handle,
+                    &host_dltensor,
+                    self.dltensor_mut(),
+                    null_mut(),
+                );
+                tvm_runtime_sys::TVMDeviceAPIStreamSync(handle, self.device(), null_mut());
+                tvm_runtime_sys::TVMDeviceAPIDestroy(handle);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn reshape(&mut self, shape: &[i64]) -> tvm_ffi::error::Result<Tensor> {
+        let nelem_before = self.shape().iter().product::<i64>();
+        let nelem_after = shape.iter().product::<i64>();
+        if nelem_before != nelem_after {
+            tvm_ffi::bail!(
+                tvm_ffi::VALUE_ERROR,
+                "Cannot reshape from {:?} to {:?}",
+                self.shape(),
+                shape,
+            );
+        }
+
+        let mut new_tensor = Self::empty(shape, self.dtype(), self.device());
+        new_tensor.copy_from(self).unwrap();
+
+        Ok(new_tensor)
     }
 }
 

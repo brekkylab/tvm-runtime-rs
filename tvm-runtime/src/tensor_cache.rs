@@ -1,9 +1,9 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tvm_ffi::{Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Tensor};
+use tvm_ffi::{Array, DLDataType, DLDataTypeCode, DLDataTypeExt};
 
-use crate::TensorCopy;
+use crate::Tensor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum TensorFormat {
@@ -86,8 +86,7 @@ impl TensorCache {
             })?;
             for param_record in file_record.records.iter() {
                 let dtype = DLDataType::try_from_str(&param_record.dtype).unwrap();
-                let mut tensor = Tensor::from_nd_alloc(
-                    crate::rtensor::DeviceNDAlloc {},
+                let mut tensor = Tensor::empty(
                     param_record
                         .shape
                         .iter()
@@ -145,11 +144,11 @@ impl TensorCache {
         serde_json::to_string(self).unwrap()
     }
 
-    pub fn get_params(&self, param_names: Vec<&str>) -> Array<Tensor> {
-        let mut array = Array::<Tensor>::default();
+    pub fn get_params(&self, param_names: Vec<&str>) -> Array<tvm_ffi::Tensor> {
+        let mut array = Array::<tvm_ffi::Tensor>::default();
         for param in param_names {
             let tensor = self.pool.get(param).unwrap();
-            array.push(tensor.clone());
+            array.push(tensor.clone().into());
         }
         array
     }

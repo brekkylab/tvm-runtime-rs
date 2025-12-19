@@ -18,11 +18,10 @@
 [package]
 name = "tvm-runtime"
 description = "tvm-runtime rust support"
-
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-
+repository = "https://github.com/brekkylab/tvm-runtime-rs"
 
 [lib]
 name = "tvm_runtime"
@@ -30,8 +29,21 @@ crate-type = ["lib"]
 
 [dependencies]
 anyhow = "1.0.100"
+bytemuck = "1.24.0"
+minijinja = { version = "2.11.0", features = ["loader", "custom_syntax", "json", "preserve_order"] }
+minijinja-contrib = { version = "2.11.0", features = ["pycompat"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tokenizers = "0.22.2"
 tvm-ffi = { path = "../tvm-ffi" }
 tvm-ffi-sys = { path = "../tvm-ffi-sys" }
 tvm-runtime-sys = { path = "../tvm-runtime-sys" }
+
+[dev-dependencies]
+rand = "0.9.2"
+
+[features]
+default = []
+cuda = ["tvm-runtime-sys/cuda"]
+metal = ["tvm-runtime-sys/metal"]
+vulkan = ["tvm-runtime-sys/vulkan"]

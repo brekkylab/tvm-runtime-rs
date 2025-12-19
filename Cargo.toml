@@ -1,4 +1,9 @@
 [workspace]
-members = ["tvm-ffi", "tvm-ffi-sys", "tvm-ffi-macros", "tvm-runtime-sys", "tvm-runtime"]
-
+members = [
+    "./tvm-ffi",
+    "./tvm-ffi-sys",
+    "./tvm-ffi-macros",
+    "./tvm-runtime",
+    "./tvm-runtime-sys"
+]
 resolver = "2"

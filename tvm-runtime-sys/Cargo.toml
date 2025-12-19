@@ -18,11 +18,10 @@
 [package]
 name = "tvm-runtime-sys"
 description = "Low-level sys crate for tvm-runtime"
-
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-
+repository = "https://github.com/brekkylab/tvm-runtime-rs"
 
 [lib]
 name = "tvm_runtime_sys"
@@ -33,3 +32,9 @@ cmake = "0.1"
 
 [dependencies]
 tvm-ffi-sys = { path = "../tvm-ffi-sys" }
+
+[features]
+default = []
+cuda = []
+metal = []
+vulkan = []
