@@ -6,38 +6,6 @@ use tvm_ffi::{
 use tvm_ffi_sys::DLTensor;
 use tvm_runtime_sys::{TVMDeviceAPIAllocDataSpace, TVMDeviceAPIFreeDataSpace, TVMDeviceAPIGet};
 
-#[derive(Debug, Clone)]
-pub struct DeviceNDAlloc {}
-
-unsafe impl Send for DeviceNDAlloc {}
-
-unsafe impl Sync for DeviceNDAlloc {}
-
-unsafe impl NDAllocator for DeviceNDAlloc {
-    const MIN_ALIGN: usize = 64;
-
-    unsafe fn alloc_data(&mut self, prototype: &DLTensor) -> *mut c_void {
-        let numel = prototype.numel() as usize;
-        let item_size = prototype.item_size();
-        let size = numel * item_size as usize;
-        let layout = std::alloc::Layout::from_size_align(size, Self::MIN_ALIGN).unwrap();
-        TVMDeviceAPIAllocDataSpace(
-            TVMDeviceAPIGet(prototype.device, false as i32),
-            prototype.device,
-            layout.size(),
-            layout.align(),
-            prototype.dtype,
-        )
-    }
-
-    unsafe fn free_data(&mut self, tensor: &DLTensor) {
-        TVMDeviceAPIFreeDataSpace(
-            TVMDeviceAPIGet(tensor.device, false as i32),
-            tensor.device,
-            tensor.data,
-        );
-    }
-}
 
 fn host_of_device(device: DLDevice) -> Option<DLDeviceType> {
     match device.device_type {
