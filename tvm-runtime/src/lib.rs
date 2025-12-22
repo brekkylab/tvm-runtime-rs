@@ -87,7 +87,7 @@ mod tests {
     const PAGE_SIZE: i64 = 16;
 
     #[test]
-    fn test_module() -> () {
+    fn test_module() -> anyhow::Result<()> {
         let base_path = PathBuf::from("/Users/haejoonkim/.cache/ailoy");
         let model_path = base_path.join("Qwen--Qwen3-8B");
         let runtime_path = base_path.join("Qwen--Qwen3-8B--aarch64-apple-darwin--metal");
@@ -121,8 +121,20 @@ mod tests {
             .unwrap();
         let metadata: Value = serde_json::from_str(&metadata).unwrap();
 
+        let device = DLDevice {
+            device_type: DLDeviceType::kDLMetal,
+            device_id: 0,
+        };
+
         let start = std::time::Instant::now();
-        let tensor_cache = TensorCache::from(&model_path, DLDeviceType::kDLMetal, 0).unwrap();
+        let tensor_cache_json_path = if model_path.join("tensor-cache.json").exists() {
+            model_path.join("tensor-cache.json")
+        } else if model_path.join("ndarray-cache.json").exists() {
+            model_path.join("ndarray-cache.json")
+        } else {
+            anyhow::bail!("tensor cache json file does not exist");
+        };
+        let tensor_cache = TensorCache::from(&tensor_cache_json_path, device).unwrap();
         let duration = start.elapsed();
         println!("Time elapsed for tensor cache load: {:?}", duration);
 
@@ -192,10 +204,6 @@ mod tests {
             std::fs::read_to_string(model_path.join("tokenizer.json")).unwrap();
         let tokenizer = Tokenizer::new(&tokenizer_config_json);
 
-        let device = DLDevice {
-            device_type: DLDeviceType::kDLMetal,
-            device_id: 0,
-        };
         let param_names = metadata
             .get("params")
             .unwrap()
@@ -392,5 +400,7 @@ mod tests {
         println!("");
         let duration = start.elapsed().as_secs();
         println!("tps: {} tok/s", tokens / duration);
+
+        Ok(())
     }
 }

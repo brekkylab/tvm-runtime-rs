@@ -1,8 +1,8 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use serde::{Deserialize, Serialize};
-use tvm_ffi::{Array, DLDataType, DLDataTypeCode, DLDataTypeExt};
+use tvm_ffi::{Array, DLDataType, DLDataTypeCode, DLDataTypeExt, DLDevice};
 
 use crate::Tensor;
 
@@ -61,32 +61,28 @@ pub struct TensorCache {
 }
 
 impl TensorCache {
-    pub fn from(
-        path: &PathBuf,
-        device_type: tvm_ffi::DLDeviceType,
-        device_id: i32,
-    ) -> anyhow::Result<Self> {
-        let device = tvm_ffi::DLDevice::new(device_type, device_id);
-        let tensor_cache_json_path = if path.join("tensor-cache.json").exists() {
-            path.join("tensor-cache.json")
-        } else if path.join("ndarray-cache.json").exists() {
-            path.join("ndarray-cache.json")
-        } else {
-            return Err(anyhow!("tensor cache json file does not exist"));
-        };
-        let tensor_cache_json = std::fs::read_to_string(tensor_cache_json_path)
-            .map_err(|e| anyhow!("Failed to open tensor cache json: {}", e.to_string()))?;
+    pub fn from(json_path: &PathBuf, device: DLDevice) -> anyhow::Result<Self> {
+        if !json_path.exists() {
+            bail!("tensor cache json file does not exist");
+        }
 
+        let tensor_cache_json = std::fs::read_to_string(json_path)
+            .map_err(|e| anyhow!("Failed to open tensor cache json: {}", e.to_string()))?;
         let mut tensor_cache = serde_json::from_str::<Self>(&tensor_cache_json)
             .map_err(|e| anyhow!("Failed to deserialize tensor cache json: {}", e.to_string()))?;
+
+        let base_path = json_path.parent().ok_or(anyhow!(
+            "Failed to get the parent path of tensor cache json file"
+        ))?;
         for file_record in tensor_cache.records.iter() {
-            let record_bytes = std::fs::read(path.join(&file_record.data_path)).map_err(|e| {
-                anyhow!(
-                    "Failed to open the record {}: {}",
-                    file_record.data_path,
-                    e.to_string()
-                )
-            })?;
+            let record_bytes =
+                std::fs::read(base_path.join(&file_record.data_path)).map_err(|e| {
+                    anyhow!(
+                        "Failed to open the record {}: {}",
+                        file_record.data_path,
+                        e.to_string()
+                    )
+                })?;
             for param_record in file_record.records.iter() {
                 let dtype = DLDataType::try_from_str(&param_record.dtype).unwrap();
                 let mut tensor = Tensor::empty(
