@@ -2,8 +2,8 @@ use core::ffi::c_void;
 use std::ptr::null_mut;
 
 use tvm_ffi::{
-    collections::tensor::DLTensorExt as _, dtype::AsDLDataType, CPUNDAlloc, DLDataType, DLDevice,
-    DLDeviceType, NDAllocator, Tensor as TVMFFITensor,
+    collections::tensor::DLTensorExt as _, dtype::AsDLDataType, DLDataType, DLDevice, DLDeviceType,
+    NDAllocator, Tensor as TVMFFITensor,
 };
 use tvm_ffi_sys::DLTensor;
 use tvm_runtime_sys::{TVMDeviceAPIAllocDataSpace, TVMDeviceAPIFreeDataSpace, TVMDeviceAPIGet};

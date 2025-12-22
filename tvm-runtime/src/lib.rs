@@ -101,7 +101,7 @@ mod tests {
             .unwrap()
             .call_tuple((
                 tvm_ffi::DLDeviceType::kDLMetal as i32, // device_type
-                0 as i32,                               // device_id
+                0i32,                                   // device_id
                 2i32,                                   // vm_allocator_type
                 tvm_ffi::DLDeviceType::kDLCPU as i32,   // host_device_type
                 0i32,                                   // host_device_id
@@ -285,7 +285,7 @@ mod tests {
                 input.copy_from_slice(tokens_sliced).unwrap();
             }
 
-            let mut embedding: tvm_ffi::Tensor = fembed
+            let embedding: tvm_ffi::Tensor = fembed
                 .call_packed(&[
                     tvm_ffi::AnyView::from(&<tvm_ffi::Tensor as From<Tensor>>::from(input)),
                     tvm_ffi::AnyView::from(&params),

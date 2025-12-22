@@ -1,5 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
+use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use tvm_ffi::{Array, DLDataType, DLDataTypeCode, DLDataTypeExt};
 
@@ -60,25 +61,27 @@ pub struct TensorCache {
 }
 
 impl TensorCache {
-    pub fn from_str(s: &str) -> serde_json::Result<Self> {
-        let cache: TensorCache = serde_json::from_str(s)?;
-        Ok(cache)
-    }
-
     pub fn from(
         path: &PathBuf,
         device_type: tvm_ffi::DLDeviceType,
         device_id: i32,
     ) -> anyhow::Result<Self> {
         let device = tvm_ffi::DLDevice::new(device_type, device_id);
-        let tensor_cache_json_path = std::fs::read_to_string(path.join("ndarray-cache.json"))
-            .map_err(|e| anyhow::anyhow!("Failed to open tensor-cache.json: {}", e.to_string()))?;
-        let mut tensor_cache = TensorCache::from_str(&tensor_cache_json_path).map_err(|e| {
-            anyhow::anyhow!("Failed to deserialize tensor-cache.json: {}", e.to_string())
-        })?;
+        let tensor_cache_json_path = if path.join("tensor-cache.json").exists() {
+            path.join("tensor-cache.json")
+        } else if path.join("ndarray-cache.json").exists() {
+            path.join("ndarray-cache.json")
+        } else {
+            return Err(anyhow!("tensor cache json file does not exist"));
+        };
+        let tensor_cache_json = std::fs::read_to_string(tensor_cache_json_path)
+            .map_err(|e| anyhow!("Failed to open tensor cache json: {}", e.to_string()))?;
+
+        let mut tensor_cache = serde_json::from_str::<Self>(&tensor_cache_json)
+            .map_err(|e| anyhow!("Failed to deserialize tensor cache json: {}", e.to_string()))?;
         for file_record in tensor_cache.records.iter() {
             let record_bytes = std::fs::read(path.join(&file_record.data_path)).map_err(|e| {
-                anyhow::anyhow!(
+                anyhow!(
                     "Failed to open the record {}: {}",
                     file_record.data_path,
                     e.to_string()
@@ -116,9 +119,7 @@ impl TensorCache {
                     }
                     tensor
                         .copy_from_slice(bytemuck::cast_slice(&decoded))
-                        .map_err(|e| {
-                            anyhow::anyhow!("Failed to copy param data: {}", e.to_string())
-                        })?;
+                        .map_err(|e| anyhow!("Failed to copy param data: {}", e.to_string()))?;
                 } else {
                     // Copy sliced data
                     let sliced = unsafe {
@@ -127,9 +128,9 @@ impl TensorCache {
                             param_record.nbytes,
                         )
                     };
-                    tensor.copy_from_slice(sliced).map_err(|e| {
-                        anyhow::anyhow!("Failed to copy param data: {}", e.to_string())
-                    })?;
+                    tensor
+                        .copy_from_slice(sliced)
+                        .map_err(|e| anyhow!("Failed to copy param data: {}", e.to_string()))?;
                 }
 
                 tensor_cache
