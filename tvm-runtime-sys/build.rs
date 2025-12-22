@@ -54,4 +54,10 @@ fn main() {
     let lib_dir = cfg.build().join("lib");
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=dylib=tvm_runtime");
+
+    // Exports metadata to any crate that depends on this one
+    let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    println!("cargo:root={}", out.to_str().unwrap()); // DEP_TVM_RUNTIME_ROOT
+    println!("cargo:lib={}/lib", out.to_str().unwrap()); // DEP_TVM_RUNTIME_LIB
+    println!("cargo:include={}/include", out.to_str().unwrap()); // DEP_TVM_RUNTIME_INCLUDE
 }

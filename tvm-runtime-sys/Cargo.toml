@@ -22,6 +22,7 @@ version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/brekkylab/tvm-runtime-rs"
+links = "tvm_runtime"
 
 [lib]
 name = "tvm_runtime_sys"
