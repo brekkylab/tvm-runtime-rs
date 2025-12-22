@@ -117,8 +117,15 @@ impl TensorCache {
                     for (idx, item) in buffer.into_iter().enumerate() {
                         decoded[idx] = (item as u32) << 16;
                     }
+
+                    let decoded_ptr = unsafe {
+                        std::slice::from_raw_parts(
+                            decoded.as_ptr() as *const u8,
+                            decoded.len() * std::mem::size_of::<u32>(),
+                        )
+                    };
                     tensor
-                        .copy_from_slice(bytemuck::cast_slice(&decoded))
+                        .copy_from_slice(decoded_ptr)
                         .map_err(|e| anyhow!("Failed to copy param data: {}", e.to_string()))?;
                 } else {
                     // Copy sliced data

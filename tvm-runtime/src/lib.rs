@@ -4,70 +4,6 @@ mod tensor_cache;
 pub use tensor::*;
 pub use tensor_cache::*;
 
-use std::str::FromStr;
-
-use anyhow::Context;
-use minijinja::{context, Environment};
-use minijinja_contrib::{add_to_environment, pycompat::unknown_method_callback};
-use serde_json::json;
-use tokenizers::tokenizer::Tokenizer as HFTokenizer;
-
-#[derive(Debug, Clone)]
-pub struct ChatTemplate<'a> {
-    key: String,
-    env: Environment<'a>,
-}
-
-impl<'a> ChatTemplate<'a> {
-    pub fn new(key: String, source: String) -> Self {
-        let mut env = Environment::new();
-        add_to_environment(&mut env);
-        env.set_unknown_method_callback(unknown_method_callback);
-        env.add_template_owned(key.clone(), source).unwrap();
-
-        Self { key, env }
-    }
-
-    pub fn apply(&self, message: String, add_generation_prompt: bool) -> anyhow::Result<String> {
-        let ctx = context!(
-            messages => json!([{"role": "system", "contents": [{"type":"text", "text": "You are an assistant."}]}, {"role": "user", "contents": message}]),
-            add_generation_prompt => add_generation_prompt,
-        );
-        self.env
-            .get_template(&self.key)
-            .unwrap()
-            .render(ctx)
-            .context("minijinja::render failed")
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Tokenizer {
-    inner: HFTokenizer,
-}
-
-impl Tokenizer {
-    pub fn new(config: &str) -> Self {
-        Tokenizer {
-            inner: HFTokenizer::from_str(config).unwrap().into(),
-        }
-    }
-
-    pub fn encode(&self, text: &str, add_special_tokens: bool) -> anyhow::Result<Vec<u32>> {
-        let encoded = self
-            .inner
-            .encode(text, add_special_tokens)
-            .map_err(|e| anyhow::anyhow!("Tokenizer::encode failed: {}", e))?;
-        Ok(encoded.get_ids().to_vec())
-    }
-
-    pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> anyhow::Result<String> {
-        self.inner
-            .decode(ids, skip_special_tokens)
-            .map_err(|e| anyhow::anyhow!("Tokenizer::decode failed: {}", e))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use rand::Rng;
@@ -77,6 +13,74 @@ mod tests {
         collections::array::ArrayObj, AnyCompatible, DLDataType, DLDataTypeCode, DLDevice,
         DLDeviceType,
     };
+
+    use minijinja::{context, Environment};
+    use minijinja_contrib::{add_to_environment, pycompat::unknown_method_callback};
+    use serde_json::json;
+    use std::str::FromStr;
+    use tokenizers::tokenizer::Tokenizer as HFTokenizer;
+
+    use anyhow::Context;
+
+    #[derive(Debug, Clone)]
+    pub struct ChatTemplate<'a> {
+        key: String,
+        env: Environment<'a>,
+    }
+
+    impl<'a> ChatTemplate<'a> {
+        pub fn new(key: String, source: String) -> Self {
+            let mut env = Environment::new();
+            add_to_environment(&mut env);
+            env.set_unknown_method_callback(unknown_method_callback);
+            env.add_template_owned(key.clone(), source).unwrap();
+
+            Self { key, env }
+        }
+
+        pub fn apply(
+            &self,
+            message: String,
+            add_generation_prompt: bool,
+        ) -> anyhow::Result<String> {
+            let ctx = context!(
+                messages => json!([{"role": "system", "contents": [{"type":"text", "text": "You are an assistant."}]}, {"role": "user", "contents": message}]),
+                add_generation_prompt => add_generation_prompt,
+            );
+            self.env
+                .get_template(&self.key)
+                .unwrap()
+                .render(ctx)
+                .context("minijinja::render failed")
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct Tokenizer {
+        inner: HFTokenizer,
+    }
+
+    impl Tokenizer {
+        pub fn new(config: &str) -> Self {
+            Tokenizer {
+                inner: HFTokenizer::from_str(config).unwrap().into(),
+            }
+        }
+
+        pub fn encode(&self, text: &str, add_special_tokens: bool) -> anyhow::Result<Vec<u32>> {
+            let encoded = self
+                .inner
+                .encode(text, add_special_tokens)
+                .map_err(|e| anyhow::anyhow!("Tokenizer::encode failed: {}", e))?;
+            Ok(encoded.get_ids().to_vec())
+        }
+
+        pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> anyhow::Result<String> {
+            self.inner
+                .decode(ids, skip_special_tokens)
+                .map_err(|e| anyhow::anyhow!("Tokenizer::decode failed: {}", e))
+        }
+    }
 
     use super::*;
 
