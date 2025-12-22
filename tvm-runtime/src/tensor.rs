@@ -103,6 +103,14 @@ impl Tensor {
         self.inner.dltensor_mut()
     }
 
+    pub fn data_ptr(&self) -> *const core::ffi::c_void {
+        self.inner.data_ptr()
+    }
+
+    pub fn data_ptr_mut(&mut self) -> *mut core::ffi::c_void {
+        self.inner.data_ptr_mut()
+    }
+
     pub fn data_as_slice<T: AsDLDataType>(&self) -> tvm_ffi::error::Result<&[T]> {
         self.inner.data_as_slice()
     }
@@ -111,7 +119,7 @@ impl Tensor {
         self.inner.data_as_slice_mut()
     }
 
-    fn copy_from(&mut self, src: &Self) -> tvm_ffi::error::Result<()> {
+    pub fn copy_from(&mut self, src: &Self) -> tvm_ffi::error::Result<()> {
         if is_host(self.device()) && is_host(src.device()) {
             // Host to Host copy
             let numel = self.shape().iter().product::<i64>() as usize;

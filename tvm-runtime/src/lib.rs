@@ -86,8 +86,209 @@ mod tests {
 
     const PAGE_SIZE: i64 = 16;
 
+    pub fn f16_to_f32(val: u16) -> f32 {
+        let sign = (val >> 15) & 0x1;
+        let exponent = (val >> 10) & 0x1f;
+        let fraction = val & 0x3ff;
+
+        let result_bits: u32 = if exponent == 0x1f {
+            // Infinity or NaN
+            if fraction == 0 {
+                // Infinity
+                (sign as u32) << 31 | 0x7f800000
+            } else {
+                // NaN
+                (sign as u32) << 31 | 0x7f800000 | ((fraction as u32) << 13)
+            }
+        } else if exponent == 0 {
+            // Zero or Subnormal
+            if fraction == 0 {
+                // Zero
+                (sign as u32) << 31
+            } else {
+                // Subnormal: Denormalized f16 to normalized f32
+                let mut exponent_f32 = 127 - 14; // f16 min_exp_bias - f32_bias + 1
+                let mut fraction_f32 = fraction as u32;
+
+                // Normalize the subnormal number
+                while (fraction_f32 & 0x400) == 0 {
+                    fraction_f32 <<= 1;
+                    exponent_f32 -= 1;
+                }
+                fraction_f32 &= !0x400; // Remove the implicit leading 1
+
+                (sign as u32) << 31 | (exponent_f32 << 23) | (fraction_f32 << 13)
+            }
+        } else {
+            // Normalized number
+            let f32_exponent = (exponent as u32) + (127 - 15);
+            let f32_fraction = (fraction as u32) << 13;
+
+            (sign as u32) << 31 | (f32_exponent << 23) | f32_fraction
+        };
+
+        f32::from_bits(result_bits)
+    }
+
+    fn normalize(vector: Vec<f32>) -> Vec<f32> {
+        let magnitude = vector.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if magnitude == 0.0 {
+            return vector.clone();
+        }
+        vector.iter().map(|x| x / magnitude).collect()
+    }
+
     #[test]
-    fn test_module() -> anyhow::Result<()> {
+    fn test_em() -> anyhow::Result<()> {
+        let base_path = PathBuf::from("/Users/haejoonkim/.cache/ailoy");
+        let model_path = base_path.join("BAAI--bge-m3");
+        let runtime_path = base_path.join("BAAI--bge-m3--aarch64-apple-darwin--metal");
+
+        let exec = tvm_ffi::Module::load_from_file(runtime_path.join("rt.dylib").to_string_lossy())
+            .unwrap();
+        let vm: tvm_ffi::Module = exec
+            .get_function("vm_load_executable")
+            .unwrap()
+            .call_tuple(())
+            .unwrap()
+            .try_into()
+            .unwrap();
+        vm.get_function("vm_initialization")
+            .unwrap()
+            .call_tuple((
+                tvm_ffi::DLDeviceType::kDLMetal as i32, // device_type
+                0i32,                                   // device_id
+                2i32,                                   // vm_allocator_type
+                tvm_ffi::DLDeviceType::kDLCPU as i32,   // host_device_type
+                0i32,                                   // host_device_id
+                2i32,                                   // host_vm_allocator_type
+            ))
+            .unwrap();
+        let metadata: tvm_ffi::String = vm
+            .get_function("_metadata")
+            .unwrap()
+            .call_tuple(())
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let metadata: Value = serde_json::from_str(&metadata).unwrap();
+
+        let device = DLDevice {
+            device_type: DLDeviceType::kDLMetal,
+            device_id: 0,
+        };
+
+        let tensor_cache_json_path = if model_path.join("tensor-cache.json").exists() {
+            model_path.join("tensor-cache.json")
+        } else if model_path.join("ndarray-cache.json").exists() {
+            model_path.join("ndarray-cache.json")
+        } else {
+            anyhow::bail!("tensor cache json file does not exist");
+        };
+        let tensor_cache = TensorCache::from(&tensor_cache_json_path, device).unwrap();
+        let param_names = metadata
+            .get("params")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.get("name").unwrap().as_str().unwrap())
+            .collect::<Vec<_>>();
+        let params = tensor_cache.get_params(param_names);
+
+        let tokenizer_config_json =
+            std::fs::read_to_string(model_path.join("tokenizer.json")).unwrap();
+        let tokenizer = Tokenizer::new(&tokenizer_config_json);
+
+        let fprefill = vm.get_function("prefill").unwrap();
+        let infer = |tokens: &[u32]| {
+            let dtype_i32 = DLDataType {
+                code: DLDataTypeCode::kDLInt as u8,
+                bits: 32,
+                lanes: 1,
+            };
+            let mut input = Tensor::empty(&[1, tokens.len() as i64], dtype_i32, device);
+            let mut mask = Tensor::empty(&[1, tokens.len() as i64], dtype_i32, device);
+            unsafe {
+                let tokens_i32: Vec<i32> = tokens.to_vec().into_iter().map(|v| v as i32).collect();
+                let tokens_slice = std::slice::from_raw_parts(
+                    tokens_i32.as_ptr() as *const u8,
+                    tokens.len() * std::mem::size_of::<i32>(),
+                );
+                input.copy_from_slice(tokens_slice).unwrap();
+
+                let mask_i32 = std::slice::from_raw_parts(
+                    vec![1i32; tokens.len()].as_ptr() as *const u8,
+                    tokens.len() * std::mem::size_of::<i32>(),
+                );
+                mask.copy_from_slice(mask_i32).unwrap();
+            }
+
+            let logits: tvm_ffi::Tensor = fprefill
+                .call_packed(&[
+                    tvm_ffi::AnyView::from(&<tvm_ffi::Tensor as From<Tensor>>::from(input)),
+                    tvm_ffi::AnyView::from(&<tvm_ffi::Tensor as From<Tensor>>::from(mask)),
+                    tvm_ffi::AnyView::from(&params),
+                ])
+                .unwrap()
+                .try_into()
+                .unwrap();
+            let logits: Tensor = logits.into();
+            println!("logits.shape: {:?}", logits.shape());
+
+            let mut logits_cpu = Tensor::empty_like(
+                &logits,
+                DLDevice {
+                    device_type: DLDeviceType::kDLCPU,
+                    device_id: 0,
+                },
+            );
+            logits_cpu.copy_from(&logits).unwrap();
+
+            assert_eq!(logits_cpu.dtype().code, DLDataTypeCode::kDLFloat as u8);
+            assert_eq!(
+                logits_cpu.dtype().bits == 32 || logits_cpu.dtype().bits == 16,
+                true
+            );
+
+            // Copy the dense vector only
+            let last_dim = logits_cpu.shape().last().unwrap().clone() as usize;
+            let dense_vec = if logits_cpu.dtype().bits == 16 {
+                // Copy FP16
+                let mut buffer_u16: Vec<u16> = vec![0u16; last_dim];
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        logits_cpu.data_ptr() as *const u16,
+                        buffer_u16.as_mut_ptr(),
+                        last_dim,
+                    );
+                }
+                let buffer_f32: Vec<f32> = buffer_u16.into_iter().map(|v| f16_to_f32(v)).collect();
+                buffer_f32
+            } else {
+                // Copy FP32
+                let mut buffer: Vec<f32> = vec![0f32; last_dim];
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        logits_cpu.data_ptr() as *const f32,
+                        buffer.as_mut_ptr(),
+                        last_dim,
+                    );
+                }
+                buffer
+            };
+            normalize(dense_vec)
+        };
+
+        let input_tokens = tokenizer.encode("What is your name?", true).unwrap();
+        let output = infer(input_tokens.as_slice());
+        println!("output: {:?}", output);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_lm() -> anyhow::Result<()> {
         let base_path = PathBuf::from("/Users/haejoonkim/.cache/ailoy");
         let model_path = base_path.join("Qwen--Qwen3-8B");
         let runtime_path = base_path.join("Qwen--Qwen3-8B--aarch64-apple-darwin--metal");
