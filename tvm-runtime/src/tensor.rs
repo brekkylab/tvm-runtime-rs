@@ -1,11 +1,13 @@
 use core::ffi::c_void;
+use std::ops::{Deref, DerefMut};
 use std::ptr::null_mut;
 
 use tvm_ffi::{
-    collections::tensor::DLTensorExt as _, dtype::AsDLDataType, DLDataType, DLDevice, DLDeviceType,
-    NDAllocator, Tensor as TVMFFITensor,
+    collections::tensor::DLTensorExt as _, dtype::AsDLDataType, object::ObjectArc,
+    type_traits::AnyCompatible, DLDataType, DLDevice, DLDeviceType, NDAllocator,
+    Tensor as TVMFFITensor,
 };
-use tvm_ffi_sys::DLTensor;
+use tvm_ffi_sys::{DLTensor, TVMFFIAny};
 use tvm_runtime_sys::{TVMDeviceAPIAllocDataSpace, TVMDeviceAPIFreeDataSpace, TVMDeviceAPIGet};
 
 fn host_of_device(device: DLDevice) -> Option<DLDeviceType> {
@@ -117,6 +119,22 @@ impl Tensor {
 
     pub fn data_as_slice_mut<T: AsDLDataType>(&mut self) -> tvm_ffi::error::Result<&mut [T]> {
         self.inner.data_as_slice_mut()
+    }
+
+    pub fn is_contiguous(&self) -> bool {
+        self.inner.is_contiguous()
+    }
+
+    pub fn ndim(&self) -> usize {
+        self.inner.ndim()
+    }
+
+    pub fn numel(&self) -> usize {
+        self.inner.numel()
+    }
+
+    pub fn strides(&self) -> &[i64] {
+        self.inner.strides()
     }
 
     pub fn copy_from(&mut self, src: &Self) -> tvm_ffi::error::Result<()> {
@@ -240,5 +258,83 @@ impl From<TVMFFITensor> for Tensor {
 impl From<Tensor> for TVMFFITensor {
     fn from(value: Tensor) -> Self {
         value.inner
+    }
+}
+
+impl AsRef<TVMFFITensor> for Tensor {
+    fn as_ref(&self) -> &TVMFFITensor {
+        return &self.inner;
+    }
+}
+
+impl AsMut<TVMFFITensor> for Tensor {
+    fn as_mut(&mut self) -> &mut TVMFFITensor {
+        &mut self.inner
+    }
+}
+
+impl Deref for Tensor {
+    type Target = TVMFFITensor;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for Tensor {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+unsafe impl AnyCompatible for Tensor {
+    unsafe fn copy_to_any_view(src: &Self, data: &mut TVMFFIAny) {
+        TVMFFITensor::copy_to_any_view(&src.inner, data);
+    }
+
+    unsafe fn move_to_any(src: Self, data: &mut TVMFFIAny) {
+        TVMFFITensor::move_to_any(src.inner, data);
+    }
+
+    unsafe fn check_any_strict(data: &TVMFFIAny) -> bool {
+        TVMFFITensor::check_any_strict(data)
+    }
+
+    unsafe fn copy_from_any_view_after_check(data: &TVMFFIAny) -> Self {
+        Self {
+            inner: TVMFFITensor::copy_from_any_view_after_check(data),
+        }
+    }
+
+    unsafe fn move_from_any_after_check(data: &mut TVMFFIAny) -> Self {
+        Self {
+            inner: TVMFFITensor::move_from_any_after_check(data),
+        }
+    }
+
+    unsafe fn try_cast_from_any_view(data: &TVMFFIAny) -> Result<Self, ()> {
+        TVMFFITensor::try_cast_from_any_view(data).map(|inner| Self { inner })
+    }
+
+    fn type_str() -> String {
+        TVMFFITensor::type_str()
+    }
+}
+
+unsafe impl tvm_ffi::object::ObjectRefCore for Tensor {
+    type ContainerType = <TVMFFITensor as tvm_ffi::object::ObjectRefCore>::ContainerType;
+
+    fn data(this: &Self) -> &ObjectArc<Self::ContainerType> {
+        TVMFFITensor::data(&this.inner)
+    }
+
+    fn into_data(this: Self) -> ObjectArc<Self::ContainerType> {
+        TVMFFITensor::into_data(this.inner)
+    }
+
+    fn from_data(data: ObjectArc<Self::ContainerType>) -> Self {
+        Self {
+            inner: TVMFFITensor::from_data(data),
+        }
     }
 }

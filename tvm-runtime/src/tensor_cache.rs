@@ -148,8 +148,8 @@ impl TensorCache {
         serde_json::to_string(self).unwrap()
     }
 
-    pub fn get_params(&self, param_names: Vec<&str>) -> Array<tvm_ffi::Tensor> {
-        let mut params: Vec<tvm_ffi::Tensor> = vec![];
+    pub fn get_params(&self, param_names: Vec<&str>) -> Array<Tensor> {
+        let mut params: Vec<Tensor> = vec![];
         for param in param_names {
             let tensor = self.pool.get(param).unwrap();
             params.push(tensor.clone().into());
