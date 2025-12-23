@@ -149,11 +149,11 @@ impl TensorCache {
     }
 
     pub fn get_params(&self, param_names: Vec<&str>) -> Array<tvm_ffi::Tensor> {
-        let mut array = Array::<tvm_ffi::Tensor>::default();
+        let mut params: Vec<tvm_ffi::Tensor> = vec![];
         for param in param_names {
             let tensor = self.pool.get(param).unwrap();
-            array.push(tensor.clone().into());
+            params.push(tensor.clone().into());
         }
-        array
+        Array::new(params)
     }
 }
