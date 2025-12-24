@@ -31,7 +31,7 @@ crate-type = ["lib"]
 cmake = "0.1"
 
 [dependencies]
-tvm-ffi-sys = { path = "../tvm-ffi-sys" }
+tvm-ffi-sys = { path = "../3rdparty/tvm/3rdparty/tvm-ffi/rust/tvm-ffi-sys" }
 
 [features]
 default = []

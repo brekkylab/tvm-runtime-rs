@@ -79,4 +79,29 @@ fn main() {
                 .status();
         }
     }
+
+    #[cfg(target_os = "windows")]
+    {
+        for dll_name in ["tvm_runtime.dll", "tvm_ffi.dll"] {
+            let dll_path = lib_dir.join(dll_name);
+            if dll_path.exists() {
+                let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+                // Copy to OUT_DIR
+                let _ = std::fs::copy(&dll_path, out_dir.join(dll_name));
+                
+                // Try to copy to the target/profile directory and deps folder
+                let target_dir = out_dir.clone();
+                if let Some(build_dir_idx) = target_dir.components().enumerate().find(|(_, c)| c.as_os_str() == "build").map(|(i, _)| i) {
+                    let mut path = PathBuf::new();
+                    for (i, c) in target_dir.components().enumerate() {
+                        if i >= build_dir_idx { break; }
+                        path.push(c);
+                    }
+                    // path is now target/debug
+                    let _ = std::fs::copy(&dll_path, path.join(dll_name));
+                    let _ = std::fs::copy(&dll_path, path.join("deps").join(dll_name));
+                }
+            }
+        }
+    }
 }

@@ -1,8 +1,8 @@
 [workspace]
 members = [
-    "./tvm-ffi",
-    "./tvm-ffi-sys",
-    "./tvm-ffi-macros",
+    "./3rdparty/tvm/3rdparty/tvm-ffi/rust/tvm-ffi",
+    "./3rdparty/tvm/3rdparty/tvm-ffi/rust/tvm-ffi-sys",
+    "./3rdparty/tvm/3rdparty/tvm-ffi/rust/tvm-ffi-macros",
     "./tvm-runtime",
     "./tvm-runtime-sys"
 ]
