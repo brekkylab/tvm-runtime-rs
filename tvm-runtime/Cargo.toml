@@ -35,12 +35,6 @@ tvm-ffi = { path = "../3rdparty/tvm/3rdparty/tvm-ffi/rust/tvm-ffi" }
 tvm-ffi-sys = { path = "../3rdparty/tvm/3rdparty/tvm-ffi/rust/tvm-ffi-sys" }
 tvm-runtime-sys = { path = "../tvm-runtime-sys" }
 
-[dev-dependencies]
-minijinja = { version = "2.11.0", features = ["loader", "custom_syntax", "json", "preserve_order"] }
-minijinja-contrib = { version = "2.11.0", features = ["pycompat"] }
-tokenizers = "0.22.2"
-rand = "0.9.2"
-
 [features]
 default = []
 cuda = ["tvm-runtime-sys/cuda"]
