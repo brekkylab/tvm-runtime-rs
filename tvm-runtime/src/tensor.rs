@@ -2,9 +2,10 @@ use core::ffi::c_void;
 use std::ops::{Deref, DerefMut};
 use std::ptr::null_mut;
 
+use tvm_ffi::function_internal::ArgIntoRef;
 use tvm_ffi::{
     collections::tensor::DLTensorExt as _, dtype::AsDLDataType, object::ObjectArc,
-    type_traits::AnyCompatible, DLDataType, DLDevice, DLDeviceType, NDAllocator,
+    type_traits::AnyCompatible, Any, AnyView, DLDataType, DLDevice, DLDeviceType, NDAllocator,
     Tensor as TVMFFITensor,
 };
 use tvm_ffi_sys::{DLTensor, TVMFFIAny};
@@ -230,7 +231,7 @@ impl Tensor {
         Ok(())
     }
 
-    pub fn reshape(&mut self, shape: &[i64]) -> tvm_ffi::error::Result<Tensor> {
+    pub fn reshape(&self, shape: &[i64]) -> tvm_ffi::error::Result<Tensor> {
         let nelem_before = self.shape().iter().product::<i64>();
         let nelem_after = shape.iter().product::<i64>();
         if nelem_before != nelem_after {
@@ -336,5 +337,31 @@ unsafe impl tvm_ffi::object::ObjectRefCore for Tensor {
         Self {
             inner: TVMFFITensor::from_data(data),
         }
+    }
+}
+
+impl<'a> TryFrom<AnyView<'a>> for Tensor {
+    type Error = <TVMFFITensor as TryFrom<AnyView<'a>>>::Error;
+
+    #[inline(always)]
+    fn try_from(value: AnyView<'a>) -> Result<Self, Self::Error> {
+        <TVMFFITensor as TryFrom<AnyView<'a>>>::try_from(value).map(|t| t.into())
+    }
+}
+
+impl TryFrom<Any> for Tensor {
+    type Error = <TVMFFITensor as TryFrom<Any>>::Error;
+
+    #[inline(always)]
+    fn try_from(value: Any) -> Result<Self, Self::Error> {
+        <TVMFFITensor as TryFrom<Any>>::try_from(value).map(|t| t.into())
+    }
+}
+
+impl ArgIntoRef for Tensor {
+    type Target = <TVMFFITensor as ArgIntoRef>::Target;
+
+    fn to_ref(&self) -> &Self::Target {
+        <TVMFFITensor as ArgIntoRef>::to_ref(self)
     }
 }
