@@ -183,7 +183,7 @@ impl Tensor {
     }
 
     pub fn copy_from_slice(&mut self, src: &[u8]) -> tvm_ffi::error::Result<()> {
-        if self.device().device_type == DLDeviceType::kDLCPU {
+        if is_host(self.device()) {
             // Host to Host copy
             let numel = self.shape().iter().product::<i64>() as usize;
             let item_size = (self.dtype().bits / 8) as usize;
@@ -206,7 +206,8 @@ impl Tensor {
             let host_dltensor = DLTensor {
                 data: src.as_ptr() as *mut c_void,
                 device: DLDevice {
-                    device_type: DLDeviceType::kDLCPU,
+                    device_type: host_of_device(self.device())
+                        .expect("The matching host device type should be exist"),
                     device_id: 0,
                 },
                 ndim: self.dltensor().ndim,
