@@ -1,9 +1,10 @@
 use std::{collections::HashMap, path::PathBuf};
 
+use anyhow::{anyhow, bail};
 use serde::{Deserialize, Serialize};
-use tvm_ffi::{Array, DLDataType, DLDataTypeCode, DLDataTypeExt, Tensor};
+use tvm_ffi::{Array, DLDataType, DLDataTypeCode, DLDataTypeExt, DLDevice};
 
-use crate::TensorCopy;
+use crate::Tensor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum TensorFormat {
@@ -60,34 +61,31 @@ pub struct TensorCache {
 }
 
 impl TensorCache {
-    pub fn from_str(s: &str) -> serde_json::Result<Self> {
-        let cache: TensorCache = serde_json::from_str(s)?;
-        Ok(cache)
-    }
+    pub fn from(json_path: &PathBuf, device: DLDevice) -> anyhow::Result<Self> {
+        if !json_path.exists() {
+            bail!("tensor cache json file does not exist");
+        }
 
-    pub fn from(
-        path: &PathBuf,
-        device_type: tvm_ffi::DLDeviceType,
-        device_id: i32,
-    ) -> anyhow::Result<Self> {
-        let device = tvm_ffi::DLDevice::new(device_type, device_id);
-        let tensor_cache_json_path = std::fs::read_to_string(path.join("ndarray-cache.json"))
-            .map_err(|e| anyhow::anyhow!("Failed to open tensor-cache.json: {}", e.to_string()))?;
-        let mut tensor_cache = TensorCache::from_str(&tensor_cache_json_path).map_err(|e| {
-            anyhow::anyhow!("Failed to deserialize tensor-cache.json: {}", e.to_string())
-        })?;
+        let tensor_cache_json = std::fs::read_to_string(json_path)
+            .map_err(|e| anyhow!("Failed to open tensor cache json: {}", e.to_string()))?;
+        let mut tensor_cache = serde_json::from_str::<Self>(&tensor_cache_json)
+            .map_err(|e| anyhow!("Failed to deserialize tensor cache json: {}", e.to_string()))?;
+
+        let base_path = json_path.parent().ok_or(anyhow!(
+            "Failed to get the parent path of tensor cache json file"
+        ))?;
         for file_record in tensor_cache.records.iter() {
-            let record_bytes = std::fs::read(path.join(&file_record.data_path)).map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to open the record {}: {}",
-                    file_record.data_path,
-                    e.to_string()
-                )
-            })?;
+            let record_bytes =
+                std::fs::read(base_path.join(&file_record.data_path)).map_err(|e| {
+                    anyhow!(
+                        "Failed to open the record {}: {}",
+                        file_record.data_path,
+                        e.to_string()
+                    )
+                })?;
             for param_record in file_record.records.iter() {
                 let dtype = DLDataType::try_from_str(&param_record.dtype).unwrap();
-                let mut tensor = Tensor::from_nd_alloc(
-                    crate::rtensor::DeviceNDAlloc {},
+                let mut tensor = Tensor::empty(
                     param_record
                         .shape
                         .iter()
@@ -115,11 +113,16 @@ impl TensorCache {
                     for (idx, item) in buffer.into_iter().enumerate() {
                         decoded[idx] = (item as u32) << 16;
                     }
+
+                    let decoded_ptr = unsafe {
+                        std::slice::from_raw_parts(
+                            decoded.as_ptr() as *const u8,
+                            decoded.len() * std::mem::size_of::<u32>(),
+                        )
+                    };
                     tensor
-                        .copy_from_slice(bytemuck::cast_slice(&decoded))
-                        .map_err(|e| {
-                            anyhow::anyhow!("Failed to copy param data: {}", e.to_string())
-                        })?;
+                        .copy_from_slice(decoded_ptr)
+                        .map_err(|e| anyhow!("Failed to copy param data: {}", e.to_string()))?;
                 } else {
                     // Copy sliced data
                     let sliced = unsafe {
@@ -128,9 +131,9 @@ impl TensorCache {
                             param_record.nbytes,
                         )
                     };
-                    tensor.copy_from_slice(sliced).map_err(|e| {
-                        anyhow::anyhow!("Failed to copy param data: {}", e.to_string())
-                    })?;
+                    tensor
+                        .copy_from_slice(sliced)
+                        .map_err(|e| anyhow!("Failed to copy param data: {}", e.to_string()))?;
                 }
 
                 tensor_cache
@@ -146,11 +149,11 @@ impl TensorCache {
     }
 
     pub fn get_params(&self, param_names: Vec<&str>) -> Array<Tensor> {
-        let mut array = Array::<Tensor>::default();
+        let mut params: Vec<Tensor> = vec![];
         for param in param_names {
             let tensor = self.pool.get(param).unwrap();
-            array.push(tensor.clone());
+            params.push(tensor.clone().into());
         }
-        array
+        Array::new(params)
     }
 }

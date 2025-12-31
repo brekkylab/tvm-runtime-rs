@@ -18,11 +18,10 @@
 [package]
 name = "tvm-runtime"
 description = "tvm-runtime rust support"
-
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-
+repository = "https://github.com/brekkylab/tvm-runtime-rs"
 
 [lib]
 name = "tvm_runtime"
@@ -32,6 +31,12 @@ crate-type = ["lib"]
 anyhow = "1.0.100"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tvm-ffi = { path = "../3rdparty/tvm-ffi/rust/tvm-ffi" }
-tvm-ffi-sys = { path = "../3rdparty/tvm-ffi/rust/tvm-ffi-sys" }
+tvm-ffi = { path = "../3rdparty/tvm/3rdparty/tvm-ffi/rust/tvm-ffi" }
+tvm-ffi-sys = { path = "../3rdparty/tvm/3rdparty/tvm-ffi/rust/tvm-ffi-sys" }
 tvm-runtime-sys = { path = "../tvm-runtime-sys" }
+
+[features]
+default = []
+cuda = ["tvm-runtime-sys/cuda"]
+metal = ["tvm-runtime-sys/metal"]
+vulkan = ["tvm-runtime-sys/vulkan"]
